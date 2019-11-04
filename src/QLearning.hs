@@ -1,8 +1,8 @@
 module Env where
 
 import qualified Data.Map                      as M
-import System.Random
-import Data.Random
+import           System.Random
+import           Data.Random
 
 main :: IO ()
 main = do
@@ -11,45 +11,44 @@ main = do
     putStrLn "1"
 
 
-data Action = UP | DOWN | LEFT | RIGHT deriving (Show)
+data Action = UP | DOWN | LEFT | RIGHT deriving (Show, Ord, Eq)
 
-type QMap = M.Map String Int
+type QMap = M.Map QIndex Int
 type State = (Int, Int)
+type QIndex = (State, Action)
 type Height = Int
 type Width = Int
 type Field = (Height, Width)
 
 
-initQMap :: Int -> Int -> QMap
-initQMap _ _ = M
+initQMap :: [Action] -> [State] -> QMap
+initQMap actions states =
+    M.fromList [ ((s, a), 0) | s <- states, a <- actions ]
 
-qFunc :: State -> QMap -> Action -> Int
-qFunc _ _ _ = 1
+qFunc :: State -> QMap -> Action -> Maybe Int
+qFunc state qmap action = M.lookup (state, action) qmap
 
 reward :: State -> Action -> Int
-reward _ _ = 1
+reward _ = 1
 
 
 legalAction :: State -> Field -> [Action]
 legalAction _ _ = [UP]
 
-maxAction ::  QMap -> [Action] -> Action
-maxAction qmap actions = maxfa (qFunc qmap) actions
+maxAction :: State -> QMap -> [Action] -> Action
+maxAction state qmap actions = maxfa (qFunc state qmap) actions
 
-epsilonGreedy :: Double -> Action -> [Action] -> Action 
-epsilonGreedy epsilon maxAction actions 
-    | adventure = randomElement actions
+epsilonGreedy :: Int -> Bool -> Action -> [Action] -> Action
+epsilonGreedy randomChoice adventure maxAction actions
+    | adventure = actions !! randomChoice
     | otherwise = maxAction
-    where adventure =  (epsilon >) <$> (randomRIO (0, 1) :: IO Double)
 
 updateQFunc :: Int -> QMap -> QMap
 updateQFunc _ _ = M
 
 maxfa :: (Ord b) => (a -> b) -> [a] -> a
-maxfa f (a:as)
-    | f a > maxfb as  = a      
-    | otherwise = maxfa as
-maxfa f a = a
+maxfa f (a : as) | f a > (maxfb f as) = a
+                 | otherwise          = maxfa f as
 
 maxfb :: (Ord b) => (a -> b) -> [a] -> b
-maxfb f as = maximum $ map f as 
+maxfb f as = maximum $ map f as
