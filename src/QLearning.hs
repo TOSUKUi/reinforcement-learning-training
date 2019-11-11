@@ -21,13 +21,29 @@ type QIndex = (State, Action)
 type Height = Int
 type Width = Int
 type Field = (Height, Width)
+type SimulationResult = ([(State, Action)], QMap)
 
 
-step :: [Action] -> State -> QMap -> Double -> State
-step actions state qmap random = do
-    let legalActions = legalAction actions
-    let randomChoice <- randomRIO 0 $ length legalAction
-    let adventure = (1 - epsilon
+episode
+    :: [Action]
+    -> State
+    -> Field
+    -> QMap
+    -> epsilon
+    -> [Int]
+    -> [Double]
+    -> SimulationResult
+    -> SimulationResult
+episode actions state field qMap epsilon randomChoice:randomChoices adventureRandom:adventureRandoms simulationResult = do
+    let fieldmin     = (0, 0)
+    let legalActions = legalAction state actions fieldmin field
+    let adventure = (1 - epsilon) < adventureRandom
+    let randomChoiceWithin = if randomChoice < length legalActions then randomChoice else length legalActions
+    let nextAction   = epsilonGreedy randomChoiceWithin adventure (maxAction legalActions) legalActions 
+    let next =  state nextAction
+    let nextQMap = updateQFunc reward (state, action) qMap
+    episode actions next field nextQMap epsilon randomChoices adventureRandoms ((state, nextAction):simulationResult, nextQMap)
+episode actions state field qMap epsilon [] [] simulationResult = (simulationResult, qMap)
 
 
 
