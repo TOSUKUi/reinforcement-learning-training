@@ -1,27 +1,62 @@
-module Env where
+module QLearning
+    ( qLearning
+    )
+where
 
 import qualified Data.Map                      as M
 import           System.Random
 import           Data.Random
-
-main :: IO ()
-main = do
-
-    let states = ()
-    let qTable = initQMap State
-    putStrLn "1"
+import           Debug.Trace
 
 
 data Action = UP | DOWN | LEFT | RIGHT deriving (Show, Ord, Eq)
 
-type QMap = M.Map QIndex Int
+type QMap = M.Map QIndex Double
 type State = (Int, Int)
 type CakePosition = (Int, Int)
 type QIndex = (State, Action)
 type Height = Int
 type Width = Int
 type Field = (Height, Width)
-type SimulationResult = ([(State, Action)], QMap)
+type SimulationLog = [(State, Action)]
+type SimulationResult = (SimulationLog, QMap)
+
+
+qLearning :: IO ()
+qLearning = do
+    let states = [ (a, b) | a <- [0 .. 4], b <- [0 .. 4] ]
+    let actions      = [UP, DOWN, LEFT, RIGHT]
+    let field        = (4, 4)
+    let qMap         = initQMap actions states
+    let epsilon      = 0.1
+    let cakePosition = (3, 4)
+    randomChoices    <- randomListi 100 (0, 3)
+    adventureRandoms <- randomListd 100 (0, 1)
+    let simulationLog = []
+    putStrLn $ show $ episode actions
+                              (0, 0)
+                              field
+                              qMap
+                              epsilon
+                              cakePosition
+                              randomChoices
+                              adventureRandoms
+                              simulationLog
+
+
+randomListi :: Int -> (Int, Int) -> IO ([Int])
+randomListi 0 (a, b) = return []
+randomListi n (a, b) = do
+    r  <- randomRIO (a, b)
+    rs <- randomListi (n - 1) (a, b)
+    return (r : rs)
+
+randomListd :: Int -> (Double, Double) -> IO ([Double])
+randomListd 0 (a, b) = return []
+randomListd n (a, b) = do
+    r  <- randomRIO (a, b)
+    rs <- randomListd (n - 1) (a, b)
+    return (r : rs)
 
 
 episode
@@ -29,40 +64,50 @@ episode
     -> State
     -> Field
     -> QMap
-    -> epsilon
+    -> Double
+    -> CakePosition
     -> [Int]
     -> [Double]
+    -> SimulationLog
     -> SimulationResult
-    -> SimulationResult
-episode actions state field qMap epsilon randomChoice:randomChoices adventureRandom:adventureRandoms simulationResult = do
-    let fieldmin     = (0, 0)
-    let legalActions = legalAction state actions fieldmin field
-    let adventure = (1 - epsilon) < adventureRandom
-    let randomChoiceWithin = if randomChoice < length legalActions then randomChoice else length legalActions
-    let nextAction   = epsilonGreedy randomChoiceWithin adventure (maxAction legalActions) legalActions 
-    let next =  state nextAction
-    let nextQMap = updateQFunc reward (state, action) qMap
-    episode actions next field nextQMap epsilon randomChoices adventureRandoms ((state, nextAction):simulationResult, nextQMap)
-episode actions state field qMap epsilon [] [] simulationResult = (simulationResult, qMap)
-
-
-
-
+episode actions state field qMap epsilon cakePosition (randomChoice : randomChoices) (adventureRandom : adventureRandoms) simulationLog
+    = do
+        let fieldmin     = (0, 0)
+        let legalActions = legalAction state actions fieldmin field
+        let adventure    = (1 - epsilon) < adventureRandom
+        let randomChoiceWithin = if randomChoice < length legalActions
+                then randomChoice
+                else (length legalActions) - 1
+        let nextAction = epsilonGreedy randomChoiceWithin
+                                       adventure
+                                       (maxAction state qMap legalActions)
+                                       legalActions
+        let next = nextState state nextAction
+        let nextQMap = updateQFunc (reward state nextAction cakePosition)
+                                   (state, nextAction)
+                                   qMap
+        episode actions
+                next
+                field
+                nextQMap
+                epsilon
+                cakePosition
+                randomChoices
+                adventureRandoms
+                ((state, nextAction) : simulationLog)
+episode actions state field qMap epsilon cakePosition [] [] simulationLog =
+    (simulationLog, qMap)
 
 initQMap :: [Action] -> [State] -> QMap
 initQMap actions states =
     M.fromList [ ((s, a), 0) | s <- states, a <- actions ]
 
-qFunc :: State -> QMap -> Action -> Maybe Int
+qFunc :: State -> QMap -> Action -> Maybe Double
 qFunc state qmap action = M.lookup (state, action) qmap
-
-reward :: State -> Action -> CakePosition -> Int
-
 reward state action cakePosition | nextCakeDistance == 0            = 10
                                  | cakeDistance > nextCakeDistance  = -1
                                  | cakeDistance == nextCakeDistance = 0
-                                 | cakeDistance < nextCakeDistance  = 1
-  where
+                                 | cakeDistance < nextCakeDistance  = 1  where
     cakeDistance     = manlen state cakePosition
     nextCakeDistance = manlen (nextState state action) cakePosition
 
@@ -81,8 +126,10 @@ nextState state action | action == UP    = (fst state, (snd state) + 1)
 
 
 legalAction :: State -> [Action] -> Field -> Field -> [Action]
-legalAction state actions fieldmin fieldmax =
-    filter ((legalState fieldmin fieldmax) . (nextState state)) actions
+legalAction state actions fieldmin fieldmax = traceShow result $ result
+  where
+    result =
+        filter ((legalState fieldmin fieldmax) . (nextState state)) actions
 
 legalState :: Field -> Field -> State -> Bool
 legalState state fieldmin fieldmax = and
@@ -98,17 +145,24 @@ maxAction state qmap actions = maxfa (qFunc state qmap) actions
 
 epsilonGreedy :: Int -> Bool -> Action -> [Action] -> Action
 epsilonGreedy randomChoice adventure maxAction actions
-    | adventure = actions !! randomChoice
+    | adventure = traceShow (randomChoice, actions) $ actions !! randomChoice
     | otherwise = maxAction
 
-updateQFunc :: Int -> QIndex -> QMap -> QMap
-updateQFunc updateAmount qindex qmap =
-    M.update (Just . (+ updateAmount)) qindex qmap
+updateQFunc :: Double -> QIndex -> QMap -> QMap
+updateQFunc reward qindex qmap =
+    M.update (Just . ((reward :: Double) -)) qindex qmap
 
 
 maxfa :: (Ord b) => (a -> b) -> [a] -> a
-maxfa f (a : as) | f a > (maxfb f as) = a
-                 | otherwise          = maxfa f as
+maxfa f []       = error "empty list"
+maxfa f (a : as) = iter a as
+  where
+    iter a [] = a
+    iter a (y : ys) | f a > f y = iter a ys
+                    | otherwise = iter y ys
+
+
+
 
 maxfb :: (Ord b) => (a -> b) -> [a] -> b
 maxfb f as = maximum $ map f as

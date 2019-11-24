@@ -1,6 +1,7 @@
 module Main where
 
-import Lib
+import           Lib
+import           QLearning
 
 main :: IO ()
-main = someFunc
+main = qLearning
